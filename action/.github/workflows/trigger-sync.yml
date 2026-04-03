@@ -1,0 +1,36 @@
+name: Trigger sync
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  trigger:
+    # skip if pushed by our bot (breaks the loop)
+    if: github.actor != 'pullfrog[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get installation token
+        id: token
+        uses: ./get-installation-token
+        with:
+          repos: pullfrog
+
+      - name: Dispatch "action-repo-updated" event
+        run: |
+          gh api repos/pullfrog/app/dispatches \
+            -f event_type="action-repo-updated" \
+            -f client_payload='{
+              "before": "${{ github.event.before }}",
+              "after": "${{ github.event.after }}",
+              "compare_url": "${{ github.event.compare }}",
+              "pusher": "${{ github.actor }}"
+            }'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}

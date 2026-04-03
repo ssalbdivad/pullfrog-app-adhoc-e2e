@@ -1,0 +1,33 @@
+name: Setup CI
+description: Setup pnpm and Node.js dependencies for workflows
+
+inputs:
+  node-version:
+    description: Node.js version
+    required: false
+    default: "24"
+  cache-dependency-path:
+    description: Optional path for setup-node cache dependency
+    required: false
+    default: ""
+  install-working-directory:
+    description: Directory where dependency install runs
+    required: false
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: pnpm
+        cache-dependency-path: ${{ inputs.cache-dependency-path }}
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.install-working-directory }}
+      run: pnpm install --frozen-lockfile

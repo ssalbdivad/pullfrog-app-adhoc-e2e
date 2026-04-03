@@ -1,0 +1,44 @@
+name: "Pullfrog Action"
+description: "Execute coding agents with a prompt"
+author: "Pullfrog"
+
+inputs:
+  prompt:
+    description: "Prompt to send to the agent (string or JSON payload)"
+    required: true
+  timeout:
+    description: "Maximum run duration (e.g., 10m, 1h30m). Default: 1h"
+    required: false
+  model:
+    description: "Model to use (e.g., anthropic/claude-opus). Overrides repo settings."
+    required: false
+  cwd:
+    description: "Working directory for the agent (defaults to GITHUB_WORKSPACE)"
+    required: false
+  push:
+    description: "Git push permission: disabled (read-only, can't push) or enabled (can push). Default: enabled"
+    required: false
+  shell:
+    description: "Shell permission: disabled, restricted (filters secrets from env vars), or enabled. Public repos default to restricted for security; private repos default to enabled."
+    required: false
+  output_schema:
+    description: "JSON Schema (draft-07) for structured output validation. When provided, the action output becomes required and must conform to this schema."
+    required: false
+  token:
+    description: "GitHub-provided token with job-scoped permissions. Do not set this unless you know what you are doing."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  result:
+    description: "It's set when the prompt explicitly requests it and is required when output_schema is provided; use it to capture actionable output for the next workflow step."
+
+runs:
+  using: "node24"
+  main: "gha/entry"
+  post: "gha/post"
+  post-if: "failure() || cancelled()"
+
+branding:
+  icon: "code"
+  color: "green"

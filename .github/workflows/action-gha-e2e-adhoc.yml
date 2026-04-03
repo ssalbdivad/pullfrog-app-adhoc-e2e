@@ -1,0 +1,443 @@
+# manual sanity for uses: ./action after build — not part of default PR CI.
+# this file must exist on the default branch so it appears under Actions.
+# pass ref = branch or SHA to test (e.g. your PR branch) before merging to main.
+name: Action GHA E2E (adhoc)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: branch or full SHA to checkout (e.g. ssalb/new-cli) — tests action/ at that ref
+        required: true
+        type: string
+      mode:
+        description: quick = 2 runs (plain + json); standard = one build, deeper sequential runs; full = full matrix (expensive)
+        type: choice
+        options:
+          - quick
+          - standard
+          - full
+        default: quick
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+  checks: read
+
+env:
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  PULLFROG_MODEL: anthropic/claude-sonnet-4-6
+
+jobs:
+  quick:
+    if: github.event.inputs.mode == 'quick'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.ref }}
+          fetch-depth: 1
+
+      - uses: ./.github/actions/ci-setup
+        with:
+          cache-dependency-path: action/pnpm-lock.yaml
+          install-working-directory: action
+
+      - name: Read action package version
+        id: pkg
+        working-directory: action
+        run: |
+          v=$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Build action
+        working-directory: action
+        run: pnpm build
+
+      - name: Run agent (plain string prompt)
+        uses: ./action
+        with:
+          prompt: |
+            Reply with exactly one word: pong
+            Do not modify repository files.
+
+      - name: Run agent (~pullfrog JSON prompt)
+        uses: ./action
+        with:
+          prompt: '{"~pullfrog":"true","version":"${{ steps.pkg.outputs.version }}","prompt":"Reply with exactly one word: quick-json-ok. Do not modify repository files."}'
+
+      - name: Summary
+        run: |
+          {
+            echo "## adhoc quick"
+            echo "completed plain + json payload smoke on ref \`${{ github.event.inputs.ref }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  standard:
+    if: github.event.inputs.mode == 'standard'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.ref }}
+          fetch-depth: 1
+
+      - uses: ./.github/actions/ci-setup
+        with:
+          cache-dependency-path: action/pnpm-lock.yaml
+          install-working-directory: action
+
+      - name: Read action package version
+        id: pkg
+        working-directory: action
+        run: |
+          v=$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Build action
+        working-directory: action
+        run: pnpm build
+
+      - name: Prepare cwd fixture
+        run: |
+          mkdir -p pf-cwd-test
+          echo "standard cwd fixture" > pf-cwd-test/README.md
+
+      - name: Run agent (JSON payload + timeout field)
+        uses: ./action
+        with:
+          prompt: '{"~pullfrog":"true","version":"${{ steps.pkg.outputs.version }}","timeout":"8m","prompt":"Reply with exactly one word: std-json-timeout-ok. Do not modify repository files."}'
+
+      - name: Run agent (push disabled)
+        uses: ./action
+        with:
+          push: disabled
+          prompt: |
+            Reply with exactly one word: std-push-off
+            Do not git push. Do not modify repository files.
+
+      - name: Run agent (shell restricted)
+        uses: ./action
+        with:
+          shell: restricted
+          prompt: |
+            Reply with exactly one word: std-shell-restricted
+            Do not modify repository files.
+
+      - name: Run agent (model on input, env model cleared)
+        uses: ./action
+        env:
+          PULLFROG_MODEL: ""
+        with:
+          model: anthropic/claude-sonnet-4-6
+          prompt: |
+            Reply with exactly one word: std-model-input
+            Do not modify repository files.
+
+      - name: Run agent (output_schema + set_output)
+        id: pf_schema
+        uses: ./action
+        with:
+          output_schema: '{"type":"object","properties":{"word":{"type":"string"}},"required":["word"]}'
+          prompt: |
+            You must call set_output with a JSON object exactly: {"word":"schema-ok"}
+            Do not modify repository files. No other keys in the object.
+
+      - name: Verify action result output
+        env:
+          RESULT: ${{ steps.pf_schema.outputs.result }}
+        run: |
+          test -n "$RESULT" || { echo "::error::action output result is empty"; exit 1; }
+          echo "$RESULT" | grep -q 'schema-ok' || { echo "::error::result missing expected token"; exit 1; }
+          echo "verified \`result\` output contains schema-ok" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run agent (cwd subdirectory)
+        uses: ./action
+        with:
+          cwd: pf-cwd-test
+          prompt: |
+            Read README.md here. Reply with exactly one word: std-cwd-ok
+            Do not modify files.
+
+      - name: Run agent (JSON-looking plain prompt — no ~pullfrog)
+        uses: ./action
+        with:
+          prompt: '{"decoy":true} then reply with exactly one word: std-decoy-ok. Do not modify repository files.'
+
+      - name: Run agent (JSON payload + triggerer + eventInstructions)
+        uses: ./action
+        with:
+          prompt: '{"~pullfrog":"true","version":"${{ steps.pkg.outputs.version }}","triggerer":"adhoc-workflow","eventInstructions":"Keep the reply minimal.","prompt":"Reply with exactly one word: std-triggerer-ok. Do not modify repository files."}'
+
+      - name: Summary
+        run: |
+          {
+            echo "## adhoc standard"
+            echo "sequential deep smoke on ref \`${{ github.event.inputs.ref }}\` (json timeout, perms, model input, output_schema+verify, cwd, decoy text, triggerer payload)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  e2e-matrix:
+    if: github.event.inputs.mode == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        variant:
+          - plain
+          - model-input
+          - push-disabled
+          - push-restricted
+          - push-enabled
+          - shell-disabled
+          - shell-restricted
+          - shell-enabled
+          - perm-push-shell-restricted
+          - short-timeout
+          - json-payload
+          - json-timeout
+          - json-model
+          - json-event-workflow-dispatch
+          - json-event-unknown
+          - json-triggerer
+          - json-event-instructions
+          - cwd-subdir
+          - cwd-push-disabled
+          - output-schema
+          - prompt-unicode
+          - json-decoy-plain
+          - model-and-timeout-inputs
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.ref }}
+          fetch-depth: 1
+
+      - uses: ./.github/actions/ci-setup
+        with:
+          cache-dependency-path: action/pnpm-lock.yaml
+          install-working-directory: action
+
+      - name: Read action package version (JSON payload compat)
+        id: pkg
+        run: |
+          v=$(node -p "JSON.parse(require('fs').readFileSync('action/package.json','utf8')).version")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Build action
+        working-directory: action
+        run: pnpm build
+
+      - name: Prepare subdirectory for cwd variants
+        if: matrix.variant == 'cwd-subdir' || matrix.variant == 'cwd-push-disabled'
+        run: |
+          mkdir -p pf-cwd-test
+          echo "cwd smoke" > pf-cwd-test/README.md
+
+      - name: Run agent (plain prompt)
+        if: matrix.variant == 'plain'
+        uses: ./action
+        with:
+          prompt: |
+            Reply with exactly one word: pong
+            Do not modify repository files.
+
+      - name: Run agent (model via action input)
+        if: matrix.variant == 'model-input'
+        uses: ./action
+        env:
+          PULLFROG_MODEL: ""
+        with:
+          model: anthropic/claude-sonnet-4-6
+          prompt: |
+            Reply with exactly one word: model-input-ok
+            Do not modify repository files.
+
+      - name: Run agent (push disabled)
+        if: matrix.variant == 'push-disabled'
+        uses: ./action
+        with:
+          push: disabled
+          prompt: |
+            Reply with exactly one word: push-off
+            Do not git push. Do not modify repository files.
+
+      - name: Run agent (push restricted)
+        if: matrix.variant == 'push-restricted'
+        uses: ./action
+        with:
+          push: restricted
+          prompt: |
+            Reply with exactly one word: push-restricted-ok
+            Do not modify repository files.
+
+      - name: Run agent (push enabled explicit)
+        if: matrix.variant == 'push-enabled'
+        uses: ./action
+        with:
+          push: enabled
+          prompt: |
+            Reply with exactly one word: push-on
+            Do not git push. Do not modify repository files.
+
+      - name: Run agent (shell disabled)
+        if: matrix.variant == 'shell-disabled'
+        uses: ./action
+        with:
+          shell: disabled
+          prompt: |
+            Reply with exactly one word: shell-off
+            Do not modify repository files.
+
+      - name: Run agent (shell restricted)
+        if: matrix.variant == 'shell-restricted'
+        uses: ./action
+        with:
+          shell: restricted
+          prompt: |
+            Reply with exactly one word: shell-restricted-ok
+            Do not modify repository files.
+
+      - name: Run agent (shell enabled explicit)
+        if: matrix.variant == 'shell-enabled'
+        uses: ./action
+        with:
+          shell: enabled
+          prompt: |
+            Reply with exactly one word: shell-on
+            Do not modify repository files.
+
+      - name: Run agent (push + shell restricted)
+        if: matrix.variant == 'perm-push-shell-restricted'
+        uses: ./action
+        with:
+          push: restricted
+          shell: restricted
+          prompt: |
+            Reply with exactly one word: perm-restricted-ok
+            Do not git push. Do not modify repository files.
+
+      - name: Run agent (short timeout)
+        if: matrix.variant == 'short-timeout'
+        uses: ./action
+        with:
+          timeout: 6m
+          prompt: |
+            Reply with exactly one word: timeout-ok
+            Do not modify repository files.
+
+      - name: Run agent (JSON ~pullfrog payload)
+        if: matrix.variant == 'json-payload'
+        uses: ./action
+        with:
+          prompt: '{"~pullfrog":"true","version":"${{ steps.pkg.outputs.version }}","prompt":"Reply with exactly one word: json-payload-ok. Do not modify repository files."}'
+
+      - name: Run agent (JSON payload timeout field)
+        if: matrix.variant == 'json-timeout'
+        uses: ./action
+        with:
+          prompt: '{"~pullfrog":"true","version":"${{ steps.pkg.outputs.version }}","timeout":"7m","prompt":"Reply with exactly one word: json-timeout-ok. Do not modify repository files."}'
+
+      - name: Run agent (JSON payload model field)
+        if: matrix.variant == 'json-model'
+        uses: ./action
+        env:
+          PULLFROG_MODEL: ""
+        with:
+          prompt: '{"~pullfrog":"true","version":"${{ steps.pkg.outputs.version }}","model":"anthropic/claude-sonnet-4-6","prompt":"Reply with exactly one word: json-model-ok. Do not modify repository files."}'
+
+      - name: Run agent (JSON payload workflow_dispatch event)
+        if: matrix.variant == 'json-event-workflow-dispatch'
+        uses: ./action
+        with:
+          prompt: '{"~pullfrog":"true","version":"${{ steps.pkg.outputs.version }}","prompt":"Reply with exactly one word: evt-wd-ok. Do not modify repository files.","event":{"trigger":"workflow_dispatch"}}'
+
+      - name: Run agent (JSON payload unknown event)
+        if: matrix.variant == 'json-event-unknown'
+        uses: ./action
+        with:
+          prompt: '{"~pullfrog":"true","version":"${{ steps.pkg.outputs.version }}","prompt":"Reply with exactly one word: evt-unknown-ok. Do not modify repository files.","event":{"trigger":"unknown"}}'
+
+      - name: Run agent (JSON payload triggerer)
+        if: matrix.variant == 'json-triggerer'
+        uses: ./action
+        with:
+          prompt: '{"~pullfrog":"true","version":"${{ steps.pkg.outputs.version }}","triggerer":"matrix-triggerer","prompt":"Reply with exactly one word: json-triggerer-ok. Do not modify repository files."}'
+
+      - name: Run agent (JSON payload eventInstructions)
+        if: matrix.variant == 'json-event-instructions'
+        uses: ./action
+        with:
+          prompt: '{"~pullfrog":"true","version":"${{ steps.pkg.outputs.version }}","eventInstructions":"One word only in the reply.","prompt":"Reply with exactly one word: json-instructions-ok. Do not modify repository files."}'
+
+      - name: Run agent (cwd subdirectory)
+        if: matrix.variant == 'cwd-subdir'
+        uses: ./action
+        with:
+          cwd: pf-cwd-test
+          prompt: |
+            Read README.md in the current directory. Reply with exactly one word: cwd-ok
+            Do not modify files.
+
+      - name: Run agent (cwd + push disabled)
+        if: matrix.variant == 'cwd-push-disabled'
+        uses: ./action
+        with:
+          cwd: pf-cwd-test
+          push: disabled
+          prompt: |
+            Reply with exactly one word: cwd-push-off
+            Do not modify files. Do not git push.
+
+      - name: Run agent (model + timeout inputs together)
+        if: matrix.variant == 'model-and-timeout-inputs'
+        uses: ./action
+        env:
+          PULLFROG_MODEL: ""
+        with:
+          model: anthropic/claude-sonnet-4-6
+          timeout: 7m
+          prompt: |
+            Reply with exactly one word: model-timeout-ok
+            Do not modify repository files.
+
+      - name: Run agent (output_schema requires set_output)
+        id: pf_schema
+        if: matrix.variant == 'output-schema'
+        uses: ./action
+        with:
+          output_schema: '{"type":"object","properties":{"word":{"type":"string"}},"required":["word"]}'
+          prompt: |
+            You must call set_output with a JSON object exactly: {"word":"schema-ok"}
+            Do not modify repository files. No other keys in the object.
+
+      - name: Verify action result output (matrix)
+        if: matrix.variant == 'output-schema'
+        env:
+          RESULT: ${{ steps.pf_schema.outputs.result }}
+        run: |
+          test -n "$RESULT" || { echo "::error::empty result"; exit 1; }
+          echo "$RESULT" | grep -q 'schema-ok' || { echo "::error::missing schema-ok"; exit 1; }
+
+      - name: Run agent (unicode / multiline prompt)
+        if: matrix.variant == 'prompt-unicode'
+        uses: ./action
+        with:
+          prompt: |
+            Context line with non-ascii: café naïve 🐸 αβ
+
+            Reply with exactly one word: unicode-ok
+            Do not modify repository files.
+
+      - name: Run agent (valid JSON body without ~pullfrog — stays plain prompt)
+        if: matrix.variant == 'json-decoy-plain'
+        uses: ./action
+        with:
+          prompt: '{"decoy":true} reply with exactly one word: json-decoy-ok. do not modify repository files.'

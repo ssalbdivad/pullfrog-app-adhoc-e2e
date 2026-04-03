@@ -1,0 +1,109 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`fetchAndFormatPrDiff > generates accurate TOC line numbers for pullfrog/test-repo#1 > content 1`] = `
+"## Files (5)
+- src/format.ts → lines 9-32
+- src/math.ts → lines 33-55
+- src/old-module.ts → lines 56-64
+- src/validate.ts → lines 65-80
+- test/math.test.ts → lines 81-93
+
+---
+diff --git a/src/format.ts b/src/format.ts
+--- a/src/format.ts
++++ b/src/format.ts
+@@ -1,7 +1,17 @@
+|    1 |      | - | export function formatCurrency(amount: number) {
+|    2 |      | - |   return \`$\${amount.toFixed(2)}\`;
+|      |    1 | + | export function formatCurrency(amount: number, currency = "USD") {
+|      |    2 | + |   return new Intl.NumberFormat("en-US", {
+|      |    3 | + |     style: "currency",
+|      |    4 | + |     currency,
+|      |    5 | + |   }).format(amount);
+|    3 |    6 |   | }
+|    4 |    7 |   | 
+|    5 |    8 |   | export function formatPercent(value: number) {
+|    6 |    9 |   |   return \`\${(value * 100).toFixed(1)}%\`;
+|    7 |   10 |   | }
+|      |   11 | + | 
+|      |   12 | + | export function formatNumber(value: number, decimals = 2) {
+|      |   13 | + |   return new Intl.NumberFormat("en-US", {
+|      |   14 | + |     minimumFractionDigits: decimals,
+|      |   15 | + |     maximumFractionDigits: decimals,
+|      |   16 | + |   }).format(value);
+|      |   17 | + | }
+
+diff --git a/src/math.ts b/src/math.ts
+--- a/src/math.ts
++++ b/src/math.ts
+@@ -3,13 +3,16 @@ export function add(a: number, b: number) {
+|    3 |    3 |   | }
+|    4 |    4 |   | 
+|    5 |    5 |   | export function subtract(a: number, b: number) {
+|    6 |      | - |   return a + b; // bug: should be a - b
+|      |    6 | + |   return a - b;
+|    7 |    7 |   | }
+|    8 |    8 |   | 
+|    9 |    9 |   | export function multiply(a: number, b: number) {
+|   10 |      | - |   return a * b + 1; // bug: off by one
+|      |   10 | + |   return a * b;
+|   11 |   11 |   | }
+|   12 |   12 |   | 
+|   13 |   13 |   | export function divide(a: number, b: number) {
+|      |   14 | + |   if (b === 0) {
+|      |   15 | + |     throw new Error("division by zero");
+|      |   16 | + |   }
+|   14 |   17 |   |   return a / b;
+|   15 |   18 |   | }
+
+diff --git a/src/old-module.ts b/src/old-module.ts
+--- a/src/old-module.ts
++++ b/src/old-module.ts
+@@ -1,4 +0,0 @@
+|    1 |      | - | // this module is deprecated and will be removed
+|    2 |      | - | export function legacyHelper() {
+|    3 |      | - |   return "old";
+|    4 |      | - | }
+
+diff --git a/src/validate.ts b/src/validate.ts
+--- a/src/validate.ts
++++ b/src/validate.ts
+@@ -0,0 +1,11 @@
+|      |    1 | + | export function isPositive(n: number) {
+|      |    2 | + |   return n > 0;
+|      |    3 | + | }
+|      |    4 | + | 
+|      |    5 | + | export function isInRange(value: number, min: number, max: number) {
+|      |    6 | + |   return value >= min && value <= max;
+|      |    7 | + | }
+|      |    8 | + | 
+|      |    9 | + | export function isInteger(n: number) {
+|      |   10 | + |   return Number.isInteger(n);
+|      |   11 | + | }
+
+diff --git a/test/math.test.ts b/test/math.test.ts
+--- a/test/math.test.ts
++++ b/test/math.test.ts
+@@ -17,4 +17,8 @@ describe("math", () => {
+|   17 |   17 |   |   it("divides", () => {
+|   18 |   18 |   |     expect(divide(10, 2)).toBe(5);
+|   19 |   19 |   |   });
+|      |   20 | + | 
+|      |   21 | + |   it("throws on division by zero", () => {
+|      |   22 | + |     expect(() => divide(1, 0)).toThrow("division by zero");
+|      |   23 | + |   });
+|   20 |   24 |   | });
+"
+`;
+
+exports[`fetchAndFormatPrDiff > generates accurate TOC line numbers for pullfrog/test-repo#1 > toc 1`] = `
+"## Files (5)
+- src/format.ts → lines 9-32
+- src/math.ts → lines 33-55
+- src/old-module.ts → lines 56-64
+- src/validate.ts → lines 65-80
+- test/math.test.ts → lines 81-93
+
+---
+"
+`;

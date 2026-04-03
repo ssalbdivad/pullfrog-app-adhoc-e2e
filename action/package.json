@@ -1,0 +1,97 @@
+{
+  "name": "pullfrog",
+  "version": "0.0.188",
+  "type": "module",
+  "bin": {
+    "pullfrog": "./dist/cli.mjs",
+    "pf": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist/",
+    "agents",
+    "utils"
+  ],
+  "scripts": {
+    "test": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build": "node esbuild.config.js",
+    "play": "node play.ts",
+    "runtest": "node test/run.ts",
+    "scratch": "node scratch.ts",
+    "upDeps": "pnpm up --latest",
+    "lock": "pnpm install --no-frozen-lockfile",
+    "postinstall": "node scripts/generate-proxies.ts",
+    "prepare": "cd .. && husky action/.husky"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@ark/fs": "0.56.0",
+    "@ark/util": "0.56.0",
+    "@octokit/plugin-throttling": "^11.0.3",
+    "@octokit/rest": "^22.0.0",
+    "@octokit/webhooks-types": "^7.6.1",
+    "@standard-schema/spec": "1.1.0",
+    "@toon-format/toon": "^1.0.0",
+    "ajv": "^8.18.0",
+    "arkregex": "0.0.5",
+    "arktype": "2.2.0",
+    "dotenv": "^17.2.3",
+    "execa": "^9.6.0",
+    "fastmcp": "^3.34.0",
+    "file-type": "^21.3.0",
+    "package-manager-detector": "^1.6.0",
+    "semver": "^7.7.3",
+    "table": "^6.9.0",
+    "turndown": "^7.2.0"
+  },
+  "devDependencies": {
+    "@clack/prompts": "^1.1.0",
+    "@anthropic-ai/claude-code": "2.1.85",
+    "agent-browser": "0.21.0",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "picocolors": "^1.1.1",
+    "@types/node": "^24.7.2",
+    "@types/semver": "^7.7.1",
+    "@types/turndown": "^5.0.5",
+    "arg": "^5.0.2",
+    "esbuild": "^0.25.9",
+    "husky": "^9.0.0",
+    "opencode-ai": "1.1.56",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.17",
+    "yaml": "^2.8.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pullfrog/pullfrog.git"
+  },
+  "keywords": [
+    "github-actions",
+    "ai-coding-agent",
+    "code-review"
+  ],
+  "author": "Pullfrog <support@pullfrog.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/pullfrog/pullfrog/issues"
+  },
+  "homepage": "https://github.com/pullfrog/pullfrog#readme",
+  "zshy": {
+    "exports": "./index.ts"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./internal": {
+      "types": "./dist/internal.d.ts",
+      "import": "./dist/internal.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "packageManager": "pnpm@10.27.0+sha512.72d699da16b1179c14ba9e64dc71c9a40988cbdc65c264cb0e489db7de917f20dcf4d64d8723625f2969ba52d4b7e2a1170682d9ac2a5dcaeaab732b7e16f04a"
+}
